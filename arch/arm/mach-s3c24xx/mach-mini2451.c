@@ -208,15 +208,32 @@ static struct s3c_fb_platdata mini2451_fb_platdata = {
 
 static struct s3c_sdhci_platdata mini2451_hsmmc0_pdata __initdata = {
 	.max_width		= 4,
-	.cd_type		= S3C_SDHCI_CD_GPIO,
-	.ext_cd_gpio		= S3C2410_GPF(1),
-	.ext_cd_gpio_invert	= 1,
+	.cd_type		= S3C_SDHCI_CD_NONE,
 };
+
+static int mini2451_hsmmc1_get_ro(void *host) {
+	return 0;
+}
 
 static struct s3c_sdhci_platdata mini2451_hsmmc1_pdata __initdata = {
 	.max_width		= 4,
 	.cd_type		= S3C_SDHCI_CD_NONE,
+	.get_ro			= mini2451_hsmmc1_get_ro,
+
+	/* FIXME: Malfunction */
+#if 0
+	.cd_type		= S3C_SDHCI_CD_GPIO,
+	.ext_cd_gpio		= S3C2410_GPG(0),
+	.ext_cd_gpio_invert	= 1,
+#endif
 };
+
+static void __init mini2451_hsmmc_gpio_setup(void)
+{
+	/* NC pins on NanoPi */
+	s3c_gpio_setpull(S3C2410_GPJ(15), S3C_GPIO_PULL_UP);
+	s3c_gpio_cfgrange_nopull(S3C2410_GPJ(13), 3, S3C_GPIO_SFN(2));
+}
 
 static struct platform_device *mini2451_devices[] __initdata = {
 	&s3c_device_fb,
@@ -249,6 +266,8 @@ static void __init mini2451_machine_init(void)
 
 	s3c_sdhci0_set_platdata(&mini2451_hsmmc0_pdata);
 	s3c_sdhci1_set_platdata(&mini2451_hsmmc1_pdata);
+
+	mini2451_hsmmc_gpio_setup();
 
 	s3c24xx_hsudc_set_platdata(&mini2451_hsudc_platdata);
 
