@@ -382,6 +382,10 @@ config MACH_MINI2451
 	select S3C_DEV_NAND
 	select S3C_DEV_USB_HOST
 	select S3C2416_SETUP_SDHCI
+	select WIRELESS_EXT
+	select WEXT_SPY
+	select WEXT_PRIV
+	select AVERAGE
 	help
 	  Say Y here if you are using an FriendlyARM MINI2451
 
