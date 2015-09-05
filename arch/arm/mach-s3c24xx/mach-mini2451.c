@@ -450,6 +450,23 @@ static struct platform_device bcm20710_bt_device = {
 };
 #endif
 
+static struct s3c2410_platform_i2c nanopi_i2c0_data __initdata = {
+        .flags                  = 0,
+        .bus_num                = 0,
+        .slave_addr             = 0x10,
+        .frequency              = 200*1000,
+        .sda_delay              = 100,
+};
+
+static struct i2c_board_info nanopi_i2c_devs0[] __initdata = {
+#ifdef CONFIG_INPUT_ADXL34X_I2C
+        {
+            I2C_BOARD_INFO("adxl34x", 0x1d),
+            .irq = -1,
+        },
+#endif
+};
+
 static struct platform_device *mini2451_devices[] __initdata = {
 	&s3c_device_fb,
 	&s3c_device_hsmmc1,
@@ -486,7 +503,6 @@ static void __init mini2451_map_io(void)
 
 static void __init mini2451_machine_init(void)
 {
-	s3c_i2c0_set_platdata(NULL);
 
 	mini2451_fb_init_pdata(&mini2451_fb_platdata);
 	s3c_fb_set_platdata(&mini2451_fb_platdata);
@@ -505,6 +521,10 @@ static void __init mini2451_machine_init(void)
 	spi_register_board_info(spi0_board_info,
 			ARRAY_SIZE(spi0_board_info));
 #endif
+
+	s3c_i2c0_set_platdata(&nanopi_i2c0_data);
+	i2c_register_board_info(0, nanopi_i2c_devs0,
+			ARRAY_SIZE(nanopi_i2c_devs0));
 
 	platform_add_devices(mini2451_devices, ARRAY_SIZE(mini2451_devices));
 
