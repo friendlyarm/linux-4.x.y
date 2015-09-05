@@ -609,6 +609,12 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config GPIO_INT_SENSOR
+	tristate "driver for NanoPi GPIO int sensor module"
+	default y 
+	help
+	  this is GPIO int sensor driver for FriendlyARM NanoPi development boards
+
 source "drivers/char/xillybus/Kconfig"
 
 endmenu

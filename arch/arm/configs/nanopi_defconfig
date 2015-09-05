@@ -1379,6 +1379,7 @@ CONFIG_HW_RANDOM=y
 # CONFIG_R3964 is not set
 # CONFIG_RAW_DRIVER is not set
 # CONFIG_TCG_TPM is not set
+CONFIG_GPIO_INT_SENSOR=y
 
 #
 # I2C support
