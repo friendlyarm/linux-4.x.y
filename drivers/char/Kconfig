@@ -615,6 +615,12 @@ config GPIO_INT_SENSOR
 	help
 	  this is GPIO int sensor driver for FriendlyARM NanoPi development boards
 
+config NANOPI_PWM
+        tristate "driver for Nanopi pwm"
+        default y
+        help
+          this is pwm driver for FriendlyARM Nanopi development boards
+
 source "drivers/char/xillybus/Kconfig"
 
 endmenu
