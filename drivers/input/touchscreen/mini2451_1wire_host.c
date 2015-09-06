@@ -40,6 +40,7 @@
 #include <linux/clk.h>
 #include <linux/gpio.h>
 #include <linux/pwm.h>
+#include <linux/slab.h>
 
 #include <linux/platform_data/touchscreen-one-wire.h>
 #include <plat/gpio-cfg.h>
@@ -62,69 +63,14 @@ static struct pwm_device *pwm;
 // Touch Screen driver interface
 
 static DECLARE_WAIT_QUEUE_HEAD(ts_waitq);
-static int ts_ready;
 static int has_ts_data = 1;
-static unsigned ts_status;
 static int resumed = 0;
 
-static inline void notify_ts_data(unsigned x, unsigned y, unsigned down)
-{
-	if (!down && !(ts_status &(1U << 31))) {
-		// up repeat, give it up
-		return;
-	}
-
-	ts_status = ((x << 16) | (y)) | (down << 31);
-	ts_ready = 1;
-	wake_up_interruptible(&ts_waitq);
-}
-
-static ssize_t ts_read(struct file *filp, char *buffer, size_t count, loff_t *ppos)
-{
-	unsigned long err;
-
-	if (!ts_ready) {
-		if (filp->f_flags & O_NONBLOCK)
-			return -EAGAIN;
-		else
-			wait_event_interruptible(ts_waitq, ts_ready);
-	}
-
-	ts_ready = 0;
-
-	if (count < sizeof ts_status) {
-		return -EINVAL;
-	} else {
-		count = sizeof ts_status;
-	}
-
-	err = copy_to_user((void *)buffer, (const void *)(&ts_status), sizeof ts_status);
-	return err ? -EFAULT : sizeof ts_status;
-}
-
-static unsigned int ts_poll( struct file *file, struct poll_table_struct *wait)
-{
-	unsigned int mask = 0;
-
-	poll_wait(file, &ts_waitq, wait);
-
-	if (ts_ready)
-		mask |= POLLIN | POLLRDNORM;
-
-	return mask;
-}
-
-static struct file_operations ts_fops = {
-	.owner		= THIS_MODULE,
-	.read		= ts_read,
-	.poll		= ts_poll,
+struct ts_info {
+	struct input_dev *inp;
 };
 
-static struct miscdevice ts_misc = {
-	.minor		= 181,
-	.name		= TOUCH_DEVICE_NAME,
-	.fops		= &ts_fops,
-};
+struct ts_info *_tsi;
 
 //---------------------------------------------------------
 // backlight
@@ -286,6 +232,7 @@ static unsigned last_req, last_res;
 
 static void one_wire_session_complete(unsigned char req, unsigned int res)
 {
+	struct ts_info *tsi = _tsi;
 	unsigned char crc;
 	const unsigned char *p = (const unsigned char*)&res;
 
@@ -312,8 +259,11 @@ static void one_wire_session_complete(unsigned char req, unsigned int res)
 				unsigned pressed;
 				x =  ((p[3] >>   4U) << 8U) + p[2];
 				y =  ((p[3] &  0xFU) << 8U) + p[1];
-				pressed = (x != 0xFFFU) && (y != 0xFFFU); 
-				notify_ts_data(x, y, pressed);
+				pressed = (x != 0xFFFU) && (y != 0xFFFU);
+				input_report_abs(tsi->inp, ABS_X, x);
+				input_report_abs(tsi->inp, ABS_Y, y);
+				input_report_abs(tsi->inp, ABS_PRESSURE, pressed);
+				input_sync(tsi->inp);
 			}
 			break;
 
@@ -524,11 +474,20 @@ static struct timer_list one_wire_timer = {
 static int ts_1wire_probe(struct platform_device *pdev)
 {
 	int ret;
+	struct ts_info   *tsi;
+	struct input_dev *inp;
 
 	pdata = dev_get_platdata(&pdev->dev);
 	if (!pdata) {
 		dev_err(&pdev->dev, "failed to find platform data\n");
 		return -EINVAL;
+	}
+
+	/*	allocate ts_info data */
+	tsi = kzalloc(sizeof(struct ts_info), GFP_KERNEL);
+	if (! tsi) {
+		printk(KERN_ERR "fail, %s allocate driver info ...\n", pdev->name);
+		return -ENOMEM;
 	}
 
 	ret = gpio_request(pdata->gpio, TOUCH_DEVICE_NAME);
@@ -568,6 +527,41 @@ static int ts_1wire_probe(struct platform_device *pdev)
 
 	enable_tint();
 
+	inp = input_allocate_device();
+	if (! inp) {
+		printk(KERN_ERR "fail, %s allocate input device\n", pdev->name);
+		return -ENOMEM;
+	}
+
+	inp->name	  	= "FriendlyARM Touchscreen";
+	inp->phys 	  	= "friendlyarm/event0";
+	inp->dev.parent	= &pdev->dev;
+
+	inp->id.bustype = BUS_HOST;
+	inp->id.vendor  = 0x0001;
+	inp->id.product = 0x0001;
+	inp->id.version = 0x0001;
+
+	inp->absbit[0] = BIT(ABS_X) | BIT(ABS_Y);
+	inp->evbit [0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
+
+	input_set_abs_params(inp, ABS_X, 0, 4095, 0, 0);
+	input_set_abs_params(inp, ABS_Y, 0, 4095, 0, 0);
+	input_set_abs_params(inp, ABS_PRESSURE, 0, 1, 0, 0);
+	input_set_abs_params(inp, ABS_TOOL_WIDTH, 0, 1, 0, 0);
+
+	input_set_drvdata(inp, tsi);
+
+	_tsi = tsi;
+	tsi->inp = inp;
+
+	ret = input_register_device(inp);
+	if (ret) {
+		printk(KERN_ERR "fail, %s register for input device ...\n", pdev->name);
+        input_free_device(inp);
+		return ret;
+	}
+
 	return 0;
 
 err_timer:
@@ -587,7 +581,7 @@ static int ts_1wire_remove(struct platform_device *pdev)
 	free_irq(pdata->timer_irq, &timer_for_1wire_irq);
 
 	pwm_free(pwm);
-
+	kfree(_tsi);
 	set_pin_value(0);
 	gpio_free(pdata->gpio);
 
@@ -597,8 +591,6 @@ static int ts_1wire_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int ts_1wire_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-
 	printk("ts_1wire_suspend: before \n");
 
 	del_timer_sync(&one_wire_timer);
@@ -707,12 +699,6 @@ static int __init onewire_dev_init(void)
 {
 	int ret;
 
-	ret = misc_register(&ts_misc);
-	if (ret)
-		goto fail_ts;
-
-	printk(TOUCH_DEVICE_NAME "\tinitialized\n");
-
 	ret = misc_register(&bl_misc);
 	if (ret)
 		goto fail_bl;
@@ -738,8 +724,6 @@ static int __init onewire_dev_init(void)
 fail_drv:
 	misc_deregister(&bl_misc);
 fail_bl:
-	misc_deregister(&ts_misc);
-fail_ts:
 	return ret;
 }
 
@@ -750,7 +734,6 @@ static void __exit onewire_dev_exit(void)
 
 	remove_proc_entry("driver/one-wire-info", NULL);
 
-	misc_deregister(&ts_misc);
 	misc_deregister(&bl_misc);
 }
 
