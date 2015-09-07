@@ -33,11 +33,14 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
-
-#include <linux/iio/iio.h>
+#include <linux/miscdevice.h>
+#include <linux/cdev.h>
+#include <linux/fs.h>
 #include <mach/gpio-samsung.h>
+#include <linux/iio/iio.h>
 
 #define DRIVER_NAME	"dht11"
+#define DEVICE_NAME     "dht11"
 
 #define DHT11_DATA_VALID_TIME	2000000000  /* 2s in ns */
 
@@ -74,6 +77,9 @@ struct dht11 {
 	struct {s64 ts; int value; }	edges[DHT11_EDGES_PER_READ];
 };
 
+static struct platform_device *g_pdev = NULL;
+static struct iio_dev *g_iio = NULL;
+
 static unsigned char dht11_decode_byte(int *timing, int threshold)
 {
 	unsigned char ret = 0;
@@ -81,7 +87,6 @@ static unsigned char dht11_decode_byte(int *timing, int threshold)
 
 	for (i = 0; i < 8; ++i) {
 		ret <<= 1;
-		printk("timing[%d]=%d threshold=%d\n", i, timing[i], threshold);
 		if (timing[i] >= threshold)
 			++ret;
 	}
@@ -137,7 +142,6 @@ static int dht11_decode(struct dht11 *dht11, int offset)
 	temp_dec = dht11_decode_byte(&timing[24], threshold);
 	checksum = dht11_decode_byte(&timing[32], threshold);
 
-	pr_err("dht11: %d+%d+%d+%d %d\n", hum_int, hum_dec, temp_int, temp_dec, checksum);
 	if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum){
 		pr_err("dht11:checksum error\n");
 		return -EIO;
@@ -188,58 +192,77 @@ static int dht11_read_raw(struct iio_dev *iio_dev,
 {
 	struct dht11 *dht11 = iio_priv(iio_dev);
 	int ret;
+	int retry_count = 5;
 
-	mutex_lock(&dht11->lock);
-	if (dht11->timestamp + DHT11_DATA_VALID_TIME < iio_get_time_ns()) {
-		reinit_completion(&dht11->completion);
+        if (g_iio == NULL || g_pdev == NULL)
+                return -EINVAL;
 
-		dht11->num_edges = 0;
-		ret = gpio_direction_output(dht11->gpio, 0);
-		if (ret)
-			goto err;
-		msleep(DHT11_START_TRANSMISSION);
-		ret = gpio_direction_output(dht11->gpio, 1);
-		if (ret)
-			goto err;
+        dht11 = (struct dht11 *)iio_priv(iio_dev);
+        if (dht11->gpio == -1)
+                return -EINVAL;
 
-		ret = request_irq(dht11->irq, dht11_handle_irq,
+	while(retry_count--) {
+		mutex_lock(&dht11->lock);
+
+		if (dht11->temperature == -1 && dht11->humidity== -1) {
+                        dht11->timestamp = iio_get_time_ns() - DHT11_DATA_VALID_TIME - 1;
+                        dht11->num_edges = -1;
+                }
+
+		if (dht11->timestamp + DHT11_DATA_VALID_TIME < iio_get_time_ns()) {
+			reinit_completion(&dht11->completion);
+			dht11->num_edges = 0;
+			ret = gpio_direction_output(dht11->gpio, 0);
+			if (ret)
+				goto err;
+			msleep(DHT11_START_TRANSMISSION);
+			ret = gpio_direction_output(dht11->gpio, 1);
+			if (ret)
+				goto err;
+
+			ret = request_irq(dht11->irq, dht11_handle_irq,
 				  IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
-				  iio_dev->name, iio_dev);
-		if (ret)
-			goto err;
+					  iio_dev->name, iio_dev);
+			if (ret)
+				goto err;
 
-		ret = wait_for_completion_killable_timeout(&dht11->completion,
-								 HZ);
+			ret = wait_for_completion_killable_timeout(&dht11->completion,
+									 HZ/2);
 
-		free_irq(dht11->irq, iio_dev);
+			free_irq(dht11->irq, iio_dev);
 
-		if (ret == 0 && dht11->num_edges < DHT11_EDGES_PER_READ - 1) {
-			dev_err(&iio_dev->dev,
-					"Only %d signal edges detected\n",
-					dht11->num_edges);
-			ret = -ETIMEDOUT;
+			if (ret == 0 && dht11->num_edges < DHT11_EDGES_PER_READ - 1) {
+//				dev_err(&iio_dev->dev,"Only %d signal edges detected\n",dht11->num_edges);
+				ret = -ETIMEDOUT;
+			}
+			if (ret < 0)
+				goto err;
+			ret = dht11_decode(dht11,
+					dht11->num_edges == DHT11_EDGES_PER_READ ?
+						DHT11_EDGES_PREAMBLE :
+						DHT11_EDGES_PREAMBLE - 2);
+			if (ret < 0)
+				goto err;
 		}
-		if (ret < 0)
-			goto err;
 
-		ret = dht11_decode(dht11,
-				dht11->num_edges == DHT11_EDGES_PER_READ ?
-					DHT11_EDGES_PREAMBLE :
-					DHT11_EDGES_PREAMBLE - 2);
-		if (ret)
-			goto err;
+		ret = IIO_VAL_INT;
+		if (chan->type == IIO_TEMP) {
+			*val = dht11->temperature;
+			dht11->temperature = -1;
+		}
+		else if (chan->type == IIO_HUMIDITYRELATIVE) {
+			*val = dht11->humidity;
+			dht11->humidity = -1;
+		}
+		else
+			ret = -EINVAL;
+
+	err:
+		dht11->num_edges = -1;
+		mutex_unlock(&dht11->lock);
+		if(ret == IIO_VAL_INT)
+                        break;
 	}
-
-	ret = IIO_VAL_INT;
-	if (chan->type == IIO_TEMP)
-		*val = dht11->temperature;
-	else if (chan->type == IIO_HUMIDITYRELATIVE)
-		*val = dht11->humidity;
-	else
-		ret = -EINVAL;
-err:
-	dht11->num_edges = -1;
-	mutex_unlock(&dht11->lock);
 	return ret;
 }
 
@@ -261,10 +284,10 @@ static const struct of_device_id dht11_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, dht11_dt_ids);
 
-static int dht11_probe(struct platform_device *pdev)
+static int dht11_hwinit(int gpio)
 {
+	struct platform_device *pdev = g_pdev;
 	struct device *dev = &pdev->dev;
-	struct device_node *node = dev->of_node;
 	struct dht11 *dht11;
 	struct iio_dev *iio;
 	int ret;
@@ -274,27 +297,30 @@ static int dht11_probe(struct platform_device *pdev)
 		dev_err(dev, "Failed to allocate IIO device\n");
 		return -ENOMEM;
 	}
-
+	g_iio = iio;
 	dht11 = iio_priv(iio);
 	dht11->dev = dev;
 
-	// dht11->gpio = ret = of_get_gpio(node, 0);
-	dht11->gpio = ret = S3C2410_GPF(1);
+	dht11->gpio = ret = gpio;
+        dht11->temperature = -1;
+        dht11->humidity = -1;
 	if (ret < 0)
-		return ret;
-	ret = devm_gpio_request_one(dev, dht11->gpio, GPIOF_IN, pdev->name);
-	if (ret)
-		return ret;
+		goto err_free_dev;
 
+	ret = devm_gpio_request_one(dev, dht11->gpio, GPIOF_IN, pdev->name);
+        if (ret) {
+                printk("GPIO %d request fail\n", dht11->gpio);
+                goto gpio_free_dev;
+        }
 	dht11->irq = gpio_to_irq(dht11->gpio);
 	if (dht11->irq < 0) {
 		dev_err(dev, "GPIO %d has no interrupt\n", dht11->gpio);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_free_dev;
 	}
 
 	dht11->timestamp = iio_get_time_ns() - DHT11_DATA_VALID_TIME - 1;
 	dht11->num_edges = -1;
-
 	platform_set_drvdata(pdev, iio);
 
 	init_completion(&dht11->completion);
@@ -306,7 +332,37 @@ static int dht11_probe(struct platform_device *pdev)
 	iio->channels = dht11_chan_spec;
 	iio->num_channels = ARRAY_SIZE(dht11_chan_spec);
 
-	return devm_iio_device_register(dev, iio);
+	ret = iio_device_register(iio);
+
+        if (ret) {
+                dev_err(&pdev->dev, "failed to register DHT11\n");
+                goto err_free_dev;
+        }
+
+        return 0;
+
+err_free_dev:
+	devm_gpio_free(dht11->dev, dht11->gpio);
+gpio_free_dev:
+        g_iio = NULL;
+	iio_device_free(iio);
+        return ret;
+}
+
+static void dht11_hwexit(void)
+{
+        struct dht11 *dht11 = iio_priv(g_iio);
+        iio_device_unregister(g_iio);
+        mutex_destroy(&dht11->lock);
+        devm_gpio_free(dht11->dev, dht11->gpio);
+        iio_device_free(g_iio);
+        g_iio = NULL;
+}
+
+static int dht11_probe(struct platform_device *pdev)
+{
+        g_pdev = pdev;
+        return 0;
 }
 
 static struct platform_driver dht11_driver = {
@@ -317,6 +373,74 @@ static struct platform_driver dht11_driver = {
 	.probe  = dht11_probe,
 };
 
+static long dht11_ioctl(struct file *filp, unsigned int cmd,
+                unsigned long arg)
+{
+#define SET_DHT11_PIN                  (0)
+#define UNSET_DHT11_PIN                            (1)
+#define GET_DHT11_PIN                              (4)
+        int gpio;
+        int *pin = (int *)arg;
+        struct dht11 *dht11;
+
+        switch(cmd) {
+                case SET_DHT11_PIN:
+                        if ( pin != NULL) {
+                                gpio = *pin;
+                                if (gpio>S3C2410_GPA(0) && gpio<S3C_GPIO_END) {
+                                        if (dht11_hwinit(gpio)) {
+                                                return -EINVAL;
+                                        }
+                                } else {
+                                        return -EINVAL;
+                                }
+                        } else {
+                                return -EINVAL;
+                        }
+                        break;
+                case UNSET_DHT11_PIN:
+                        dht11_hwexit();
+                        gpio = -1;
+                        break;
+                case GET_DHT11_PIN:
+                        if (pin != NULL && g_iio != NULL) {
+                                dht11 = iio_priv(g_iio);
+                                *pin = dht11->gpio;
+                        } else {
+                                return -EINVAL;
+                        }
+                        break;
+                default:
+                        return -EINVAL;
+        }
+
+        return 0;
+}
+
+static struct file_operations dht11_dev_fops = {
+        .owner          = THIS_MODULE,
+        .unlocked_ioctl = dht11_ioctl,
+};
+
+static struct miscdevice misc = {
+        .minor          = MISC_DYNAMIC_MINOR,
+        .name           = DEVICE_NAME,
+        .fops           = &dht11_dev_fops,
+};
+
+static int __init dht11_dev_init(void) {
+        int ret;
+        ret = misc_register(&misc);
+        printk(DEVICE_NAME"\tinitialized\n");
+        return ret;
+}
+
+static void __exit dht11_dev_exit(void) {
+        misc_deregister(&misc);
+}
+
+module_init(dht11_dev_init);
+module_exit(dht11_dev_exit);
 module_platform_driver(dht11_driver);
 
 MODULE_AUTHOR("Harald Geyer <harald@ccbib.org>");
