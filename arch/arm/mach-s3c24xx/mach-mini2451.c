@@ -443,6 +443,21 @@ static struct platform_device mini2451_1wire = {
 	},
 };
 
+#ifdef CONFIG_W1_MASTER_GPIO
+#include <linux/w1-gpio.h>
+static struct w1_gpio_platform_data w1_gpio_pdata = {
+        .pin            = -1,
+        .ext_pullup_enable_pin = -1,
+        .is_open_drain  = 0,
+};
+
+static struct platform_device user_w1_device = {
+        .name          		= "w1-gpio",
+        .id                     = -1,
+        .dev.platform_data      = &w1_gpio_pdata,
+};
+#endif
+
 static struct platform_device mini2451_device_dht11 = {
 	.name			= "dht11",
 	.id				= -1,
@@ -491,6 +506,9 @@ static struct platform_device *mini2451_devices[] __initdata = {
 	&mini2451_1wire,
 	&bcm20710_bt_device,
 	&mini2451_device_dht11,
+	#ifdef CONFIG_W1_MASTER_GPIO
+	&user_w1_device,
+	#endif
 };
 
 static void __init mini2451_init_time(void)

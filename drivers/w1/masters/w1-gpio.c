@@ -1,5 +1,5 @@
 /*
- * w1-gpio - GPIO w1 bus master driver
+o - GPIO w1 bus master driver
  *
  * Copyright (C) 2007 Ville Syrjala <syrjala@sci.fi>
  *
@@ -20,8 +20,16 @@
 #include <linux/of.h>
 #include <linux/delay.h>
 
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <plat/gpio-cfg.h>
+#include <mach/gpio-samsung.h>
+
+
 #include "../w1.h"
 #include "../w1_int.h"
+
+#define DEVICE_NAME "w1GPIO"
 
 static u8 w1_gpio_set_pullup(void *data, int delay)
 {
@@ -80,7 +88,6 @@ static int w1_gpio_probe_dt(struct platform_device *pdev)
 	struct w1_gpio_platform_data *pdata = dev_get_platdata(&pdev->dev);
 	struct device_node *np = pdev->dev.of_node;
 	int gpio;
-
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return -ENOMEM;
@@ -110,7 +117,9 @@ static int w1_gpio_probe_dt(struct platform_device *pdev)
 	return 0;
 }
 
-static int w1_gpio_probe(struct platform_device *pdev)
+static struct platform_device *g_pdev;
+
+static int w1_gpio_hwinit(struct platform_device *pdev)
 {
 	struct w1_bus_master *master;
 	struct w1_gpio_platform_data *pdata;
@@ -139,7 +148,7 @@ static int w1_gpio_probe(struct platform_device *pdev)
 	err = devm_gpio_request(&pdev->dev, pdata->pin, "w1");
 	if (err) {
 		dev_err(&pdev->dev, "gpio_request (pin) failed\n");
-		return err;
+		goto free_master;
 	}
 
 	if (gpio_is_valid(pdata->ext_pullup_enable_pin)) {
@@ -149,7 +158,7 @@ static int w1_gpio_probe(struct platform_device *pdev)
 		if (err < 0) {
 			dev_err(&pdev->dev, "gpio_request_one "
 					"(ext_pullup_enable_pin) failed\n");
-			return err;
+			goto free_gpio;
 		}
 	}
 
@@ -168,7 +177,7 @@ static int w1_gpio_probe(struct platform_device *pdev)
 	err = w1_add_master_device(master);
 	if (err) {
 		dev_err(&pdev->dev, "w1_add_master device failed\n");
-		return err;
+		goto free_gpio_ext_pu;
 	}
 
 	if (pdata->enable_external_pullup)
@@ -180,9 +189,28 @@ static int w1_gpio_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, master);
 
 	return 0;
+
+ free_gpio_ext_pu:
+        if (gpio_is_valid(pdata->ext_pullup_enable_pin))
+                devm_gpio_free(&pdev->dev, pdata->ext_pullup_enable_pin);
+ free_gpio:
+       devm_gpio_free(&pdev->dev, pdata->pin);
+ free_master:
+        w1_remove_master_device(master);
+        return err;
 }
 
-static int w1_gpio_remove(struct platform_device *pdev)
+static int w1_gpio_probe(struct platform_device *pdev)
+{
+        struct w1_gpio_platform_data *pdata;
+
+        g_pdev = pdev;
+        pdata = g_pdev->dev.platform_data;
+        pdata->pin = -1;
+        return 0;
+}
+
+static int w1_gpio_hwexit(struct platform_device *pdev)
 {
 	struct w1_bus_master *master = platform_get_drvdata(pdev);
 	struct w1_gpio_platform_data *pdata = dev_get_platdata(&pdev->dev);
@@ -194,8 +222,13 @@ static int w1_gpio_remove(struct platform_device *pdev)
 		gpio_set_value(pdata->ext_pullup_enable_pin, 0);
 
 	w1_remove_master_device(master);
-
+	devm_gpio_free(&pdev->dev, pdata->pin);
 	return 0;
+}
+
+static int w1_gpio_remove(struct platform_device *pdev)
+{
+        return 0;
 }
 
 #ifdef CONFIG_PM
@@ -236,6 +269,81 @@ static struct platform_driver w1_gpio_driver = {
 	.resume = w1_gpio_resume,
 };
 
+static long nanopi_w1GPIO_ioctl(struct file *filp, unsigned int cmd,
+                unsigned long arg)
+{
+#define SET_W1GPIO_PIN                  (0)
+#define UNSET_W1GPIO_PIN                                (1)
+#define GET_W1GPIO_PIN                              (4)
+
+        int *pin = (int *)arg;
+        int gpio;
+        struct w1_gpio_platform_data *pdata = g_pdev->dev.platform_data;;
+
+        switch(cmd) {
+                case SET_W1GPIO_PIN:
+                        if ( pin != NULL) {
+                                gpio = *pin;
+                                if (gpio>S3C2410_GPA(0) && gpio<S3C_GPIO_END && pdata->pin == -1) {
+                                        pdata->pin = gpio;
+                                        if (w1_gpio_hwinit(g_pdev)) {
+                                                return -EINVAL;
+                                        }
+                                } else {
+                                        return -EINVAL;
+                                }
+                        } else {
+                                return -EINVAL;
+                        }
+                        break;
+                case UNSET_W1GPIO_PIN:
+                        if (pdata->pin != -1) {
+                                if (w1_gpio_hwexit(g_pdev)) {
+                                                return -EINVAL;
+                                }
+                                pdata->pin = -1;
+                        } else {
+                                return -EINVAL;
+                        }
+                        break;
+                case GET_W1GPIO_PIN:
+                        if (pin != NULL) {
+                                *pin = pdata->pin;
+                        } else {
+                                return -EINVAL;
+                        }
+                        break;
+                default:
+                        return -EINVAL;
+        }
+
+        return 0;
+}
+
+static struct file_operations nanopi_w1GPIO_fops = {
+        .owner                  = THIS_MODULE,
+        .unlocked_ioctl         = nanopi_w1GPIO_ioctl,
+};
+
+static struct miscdevice nanopi_w1GPIO_dev = {
+        .minor                  = MISC_DYNAMIC_MINOR,
+        .name                   = DEVICE_NAME,
+        .fops                   = &nanopi_w1GPIO_fops,
+};
+
+static int __init nanopi_w1GPIO_dev_init(void) {
+        int ret;
+        ret = misc_register(&nanopi_w1GPIO_dev);
+        printk(DEVICE_NAME"\tinitialized\n");
+        return ret;
+}
+
+static void __exit nanopi_w1GPIO_dev_exit(void) {
+        misc_deregister(&nanopi_w1GPIO_dev);
+}
+
+module_init(nanopi_w1GPIO_dev_init);
+module_exit(nanopi_w1GPIO_dev_exit);
 module_platform_driver(w1_gpio_driver);
 
 MODULE_DESCRIPTION("GPIO w1 bus master driver");
