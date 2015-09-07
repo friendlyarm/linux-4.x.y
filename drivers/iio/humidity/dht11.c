@@ -35,6 +35,7 @@
 #include <linux/of_gpio.h>
 
 #include <linux/iio/iio.h>
+#include <mach/gpio-samsung.h>
 
 #define DRIVER_NAME	"dht11"
 
@@ -49,7 +50,7 @@
 #define DHT11_EDGES_PER_READ (2*DHT11_BITS_PER_READ + DHT11_EDGES_PREAMBLE + 1)
 
 /* Data transmission timing (nano seconds) */
-#define DHT11_START_TRANSMISSION	18  /* ms */
+#define DHT11_START_TRANSMISSION	18+5  /* ms */
 #define DHT11_SENSOR_RESPONSE	80000
 #define DHT11_START_BIT		50000
 #define DHT11_DATA_BIT_LOW	27000
@@ -80,6 +81,7 @@ static unsigned char dht11_decode_byte(int *timing, int threshold)
 
 	for (i = 0; i < 8; ++i) {
 		ret <<= 1;
+		printk("timing[%d]=%d threshold=%d\n", i, timing[i], threshold);
 		if (timing[i] >= threshold)
 			++ret;
 	}
@@ -108,12 +110,24 @@ static int dht11_decode(struct dht11 *dht11, int offset)
 	if (DHT11_DATA_BIT_LOW/timeres + 1 >= threshold)
 		pr_err("dht11: WARNING: decoding ambiguous\n");
 
+	printk("Num_edges = %d: ", dht11->num_edges);
+	printk("%d %d %d", dht11->edges[0].value, dht11->edges[1].value, dht11->edges[2].value);
+	for (i = 3; i < dht11->num_edges; i++) {
+		if ((i-3) % 16 == 0)
+			printk("\n");
+		printk("%d ", dht11->edges[i].value);
+	}
+	printk("\n");
+	printk("offset=%d\n", offset);
+
 	/* scale down with timeres and check validity */
 	for (i = 0; i < DHT11_BITS_PER_READ; ++i) {
 		t = dht11->edges[offset + 2*i + 2].ts -
 			dht11->edges[offset + 2*i + 1].ts;
-		if (!dht11->edges[offset + 2*i + 1].value)
+		if (!dht11->edges[offset + 2*i + 1].value) {
+			pr_err("dht11: lost synchronisation\n");
 			return -EIO;  /* lost synchronisation */
+		}	
 		timing[i] = t / timeres;
 	}
 
@@ -123,8 +137,11 @@ static int dht11_decode(struct dht11 *dht11, int offset)
 	temp_dec = dht11_decode_byte(&timing[24], threshold);
 	checksum = dht11_decode_byte(&timing[32], threshold);
 
-	if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum)
+	pr_err("dht11: %d+%d+%d+%d %d\n", hum_int, hum_dec, temp_int, temp_dec, checksum);
+	if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum){
+		pr_err("dht11:checksum error\n");
 		return -EIO;
+	}	
 
 	dht11->timestamp = iio_get_time_ns();
 	if (hum_int < 20) {  /* DHT22 */
@@ -181,7 +198,7 @@ static int dht11_read_raw(struct iio_dev *iio_dev,
 		if (ret)
 			goto err;
 		msleep(DHT11_START_TRANSMISSION);
-		ret = gpio_direction_input(dht11->gpio);
+		ret = gpio_direction_output(dht11->gpio, 1);
 		if (ret)
 			goto err;
 
@@ -261,7 +278,8 @@ static int dht11_probe(struct platform_device *pdev)
 	dht11 = iio_priv(iio);
 	dht11->dev = dev;
 
-	dht11->gpio = ret = of_get_gpio(node, 0);
+	// dht11->gpio = ret = of_get_gpio(node, 0);
+	dht11->gpio = ret = S3C2410_GPF(1);
 	if (ret < 0)
 		return ret;
 	ret = devm_gpio_request_one(dev, dht11->gpio, GPIOF_IN, pdev->name);

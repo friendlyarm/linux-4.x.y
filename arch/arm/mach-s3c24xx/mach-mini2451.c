@@ -443,6 +443,12 @@ static struct platform_device mini2451_1wire = {
 	},
 };
 
+static struct platform_device mini2451_device_dht11 = {
+	.name			= "dht11",
+	.id				= -1,
+	.num_resources	= 0,
+};
+
 #ifdef CONFIG_BT_BCM20710
 static struct platform_device bcm20710_bt_device = {
 	.name		= "bcm20710_bluetooth",
@@ -484,6 +490,7 @@ static struct platform_device *mini2451_devices[] __initdata = {
 	&mini2451_led1,
 	&mini2451_1wire,
 	&bcm20710_bt_device,
+	&mini2451_device_dht11,
 };
 
 static void __init mini2451_init_time(void)
