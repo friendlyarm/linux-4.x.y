@@ -621,6 +621,13 @@ config NANOPI_PWM
         help
           this is pwm driver for FriendlyARM Nanopi development boards
 
+config HCSR04
+        tristate "hc-sr04 sensor"
+        default n
+        ---help---
+          The HC-SR04 ultrasonic sensor uses sonar to determine
+          distance to an object like bats or dolphins do.
+
 source "drivers/char/xillybus/Kconfig"
 
 endmenu
