@@ -1,7 +1,6 @@
 #include <linux/module.h>
 #include <linux/gpio.h>
 #include <linux/delay.h>
-
 #include <linux/kernel.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
@@ -110,7 +109,7 @@ static struct class_attribute hcsr04_class_attrs[] = {
 // Name of directory created in /sys/class
 static struct class hcsr04_class = {
         .name =			"hcsr04",
-        .owner =		THIS_MODULE,
+        .owner =		THIS_MODULE, 
         .class_attrs =	hcsr04_class_attrs,
 };
 
@@ -118,6 +117,12 @@ static struct class hcsr04_class = {
 static irqreturn_t gpio_isr(int irq, void *data)
 {	
 	if (valid_value == 0) {	
+		if((irq_num == 0 && gpio_get_value(HCSR04_PIN) != 1) || 
+			(irq_num == 1 && gpio_get_value(HCSR04_PIN) != 0) ||
+			(irq_num == 2 && gpio_get_value(HCSR04_PIN) != 1)
+		) {
+			return IRQ_HANDLED;
+		}	
 	    irq_time[irq_num] = ktime_to_us(ktime_get());
 	    if(irq_num == 2) {
 #ifdef HCSR04_IRQ_DEUBG	    			
