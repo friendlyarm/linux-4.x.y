@@ -486,6 +486,12 @@ static struct i2c_board_info nanopi_i2c_devs0[] __initdata = {
             .irq = -1,
         },
 #endif
+#ifdef CONFIG_RTC_DRV_DS1307
+        {
+            I2C_BOARD_INFO("ds1307", 0x68),
+        },
+#endif
+
 };
 
 static struct platform_device *mini2451_devices[] __initdata = {
