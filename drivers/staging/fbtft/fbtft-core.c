@@ -128,6 +128,11 @@ static int fbtft_request_gpios(struct fbtft_par *par)
 	if (pdata && pdata->gpios) {
 		gpio = pdata->gpios;
 		while (gpio->name[0]) {
+			// printk("gpio:%s\n", gpio->name);
+			if(!strcmp(gpio->name, "cs")) {		// skip cs for samsung spi driver has occupy
+				gpio++;
+				continue;
+			}	
 			flags = FBTFT_GPIO_NO_MATCH;
 			/* if driver provides match function, try it first,
 			   if no match use our own */

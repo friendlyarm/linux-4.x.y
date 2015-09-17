@@ -200,6 +200,13 @@ static int waveshare32b_init_sequence[] = {
 	0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F,
 	-1, 0x11, -2, 120, -1, 0x29, -1, 0x2c, -3 };
 
+#include <linux/platform_data/spi-s3c64xx.h>
+#include <mach/gpio-samsung.h>
+static struct s3c64xx_spi_csinfo spi0_csi = {
+	.line		= S3C2410_GPL(13),
+	.fb_delay	= 0x2,
+};
+
 /* Supported displays in alphabetical order */
 static struct fbtft_device_display displays[] = {
 	{
@@ -1116,6 +1123,26 @@ static struct fbtft_device_display displays[] = {
 			},
 		},
 		},
+	}, {
+		.name = "matrix-spi_tft",
+		.spi = &(struct spi_board_info) {
+			.modalias = "fb_ili9341",
+			.max_speed_hz = 32000000,
+			.mode = SPI_MODE_0,
+			.controller_data= &spi0_csi,
+			.platform_data = &(struct fbtft_platform_data) {
+				.display = {
+					.buswidth = 8,
+					.backlight = 1,
+				},
+				.bgr = true,
+				.gpios = (const struct fbtft_gpio []) {
+					{ "reset", -1 },
+					{ "dc", -1 },
+					{},
+				},
+			}
+		}
 	}
 };
 
