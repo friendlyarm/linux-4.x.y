@@ -799,10 +799,12 @@ static int s3c64xx_spi_setup(struct spi_device *spi)
 		spi->cs_gpio = cs->line;
 	}
 
+#ifndef CONFIG_MACH_MINI2451
 	if (IS_ERR_OR_NULL(cs)) {
 		dev_err(&spi->dev, "No CS for SPI(%d)\n", spi->chip_select);
 		return -ENODEV;
 	}
+#endif
 
 	if (!spi_get_ctldata(spi)) {
 		if (gpio_is_valid(spi->cs_gpio)) {

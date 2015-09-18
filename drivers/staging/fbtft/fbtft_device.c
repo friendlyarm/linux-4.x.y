@@ -203,7 +203,6 @@ static int waveshare32b_init_sequence[] = {
 #include <linux/platform_data/spi-s3c64xx.h>
 #include <mach/gpio-samsung.h>
 static struct s3c64xx_spi_csinfo spi0_csi = {
-	.line		= S3C2410_GPL(13),
 	.fb_delay	= 0x2,
 };
 
