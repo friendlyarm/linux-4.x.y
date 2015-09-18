@@ -1497,6 +1497,9 @@ static void __exit fbtft_device_exit(void)
 	pr_debug(DRVNAME" - exit\n");
 
 	if (spi_device) {
+		if (spi_device->master->cleanup) {
+			spi_device->master->cleanup(spi_device);
+		}
 		device_del(&spi_device->dev);
 		kfree(spi_device);
 	}
