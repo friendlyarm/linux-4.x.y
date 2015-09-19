@@ -548,7 +548,7 @@ static void __init mini2451_machine_init(void)
 	s3c24xx_hsudc_set_platdata(&mini2451_hsudc_platdata);
 
 #ifdef CONFIG_S3C64XX_DEV_SPI0
-	s3c64xx_spi0_set_platdata(NULL, 0, 1);
+	s3c64xx_spi0_set_platdata(NULL, 0, 2);	// 2 means two spi dev: fbtft & ads7846
 	spi_register_board_info(spi0_board_info,
 			ARRAY_SIZE(spi0_board_info));
 #endif

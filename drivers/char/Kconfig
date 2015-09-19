@@ -627,7 +627,11 @@ config HCSR04
         ---help---
           The HC-SR04 ultrasonic sensor uses sonar to determine
           distance to an object like bats or dolphins do.
-
+config MATRIX_ADS7846
+        tristate "spi device info for matrix ads7846/xpt2046"
+        default m
+        ---help---
+          this is spi device info for matrix ads7846/xpt2046.
 source "drivers/char/xillybus/Kconfig"
 
 endmenu
