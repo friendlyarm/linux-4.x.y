@@ -1127,6 +1127,8 @@ static struct fbtft_device_display displays[] = {
 		.spi = &(struct spi_board_info) {
 			.modalias = "fb_ili9341",
 			.max_speed_hz = 32000000,
+			.bus_num                = 0,
+		    .chip_select            = 0,		// first spi dev
 			.mode = SPI_MODE_0,
 			.controller_data= &spi0_csi,
 			.platform_data = &(struct fbtft_platform_data) {
@@ -1347,7 +1349,11 @@ static int __init fbtft_device_init(void)
 			return -EINVAL;
 		}
 		strcpy(fbtft_device_param_gpios[i].name, p_name);
-		fbtft_device_param_gpios[i++].gpio = (int) val;
+		fbtft_device_param_gpios[i].gpio = (int) val;
+		if(!strcmp(fbtft_device_param_gpios[i].name, "cs")) {
+			spi0_csi.line = fbtft_device_param_gpios[i].gpio;
+		}
+		i++;
 		if (i == MAX_GPIOS) {
 			pr_err(DRVNAME \
 				":  gpios parameter: exceeded max array size: %d\n",
