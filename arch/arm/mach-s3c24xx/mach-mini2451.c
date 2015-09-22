@@ -491,6 +491,11 @@ static struct i2c_board_info nanopi_i2c_devs0[] __initdata = {
             I2C_BOARD_INFO("ds1307", 0x68),
         },
 #endif
+#ifdef CONFIG_BMP085_I2C_MODULE
+        {
+            I2C_BOARD_INFO("bmp180", 0x77),
+        },
+#endif
 
 };
 

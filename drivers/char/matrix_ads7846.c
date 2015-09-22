@@ -92,14 +92,14 @@ static struct spi_board_info __initdata ads7846_boardinfo = {
     .controller_data		= &spi0_csi,
 };
 
-static int ads7846_dev_init(void)
+static int __init ads7846_dev_init(void)
 {	
 	ads7846_boardinfo.irq = gpio_to_irq(S3C2410_GPG(11));
 	ads7846_device_spi_device_register(&ads7846_boardinfo);
 	return 0;
 }
 
-static void ads7846_dev_exit(void)
+static void __exit ads7846_dev_exit(void)
 {
 	if (spi_device) {
 		if (spi_device->master->cleanup) {
