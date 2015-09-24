@@ -564,6 +564,10 @@ static void __init mini2451_machine_init(void)
 
 	platform_add_devices(mini2451_devices, ARRAY_SIZE(mini2451_devices));
 
+	gpio_request(S3C2410_GPG(12), "Display Power");
+	gpio_direction_output(S3C2410_GPG(12), 1);
+	gpio_free(S3C2410_GPG(12));
+
 #if defined(CONFIG_S3C24XX_SMDK)
 	smdk_machine_init();
 #else
