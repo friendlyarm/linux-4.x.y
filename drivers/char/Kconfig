@@ -632,6 +632,13 @@ config MATRIX_ADS7846
         default m
         ---help---
           this is spi device info for matrix ads7846/xpt2046.
+
+config MATRIX_ROTARY_ENCODER
+        tristate "driver for matrix rotary encoder"
+        default m
+        ---help---
+          this is driver for matrix rotary encoder.
+
 source "drivers/char/xillybus/Kconfig"
 
 endmenu

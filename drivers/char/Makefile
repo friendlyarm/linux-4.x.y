@@ -65,4 +65,5 @@ obj-$(CONFIG_GPIO_INT_SENSOR)	+= gpio_int_sensor.o
 obj-$(CONFIG_NANOPI_PWM)        += nanopi_pwm.o
 obj-$(CONFIG_HCSR04)            += hcsr04.o
 obj-$(CONFIG_MATRIX_ADS7846)	+= matrix_ads7846.o
+obj-$(CONFIG_MATRIX_ROTARY_ENCODER) += matrix_rotary_encoder.o
 obj-$(CONFIG_XILLYBUS)		+= xillybus/
