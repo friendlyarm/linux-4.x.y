@@ -1059,6 +1059,7 @@ dhd_conf_read_log_level(dhd_pub_t *dhd, char *bufp, uint len)
 	}
 #endif
 
+#ifdef DHD_DEBUG
 	/* Process dhd_console_ms */
 	memset(pick, 0, MAXSZ_BUF);
 	len_val = process_config_vars(bufp, len, pick, "dhd_console_ms=");
@@ -1066,6 +1067,7 @@ dhd_conf_read_log_level(dhd_pub_t *dhd, char *bufp, uint len)
 		dhd_console_ms = (int)simple_strtol(pick, NULL, 0);
 		printf("%s: dhd_console_ms = 0x%X\n", __FUNCTION__, dhd_console_ms);
 	}
+#endif
 }
 
 void
