@@ -37,6 +37,7 @@
 
 #define TCFG0_PRESCALER_MASK		0xff
 #define TCFG0_PRESCALER1_SHIFT		8
+#define TCFG0_PRESCALER_VALUE       32
 
 #define TCFG1_MUX_MASK			0xf
 #define TCFG1_SHIFT(chan)		(4 * (chan))
@@ -497,6 +498,7 @@ static int pwm_samsung_probe(struct platform_device *pdev)
 	struct resource *res;
 	unsigned int chan;
 	int ret;
+    u32 prescaler;
 
 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
 	if (chip == NULL)
@@ -564,6 +566,10 @@ static int pwm_samsung_probe(struct platform_device *pdev)
 		!IS_ERR(chip->tclk0) ? clk_get_rate(chip->tclk0) : 0,
 		!IS_ERR(chip->tclk1) ? clk_get_rate(chip->tclk1) : 0);
 
+    prescaler = readl(chip->base + REG_TCFG0);
+    prescaler &= ~(0xFF);
+    prescaler |= TCFG0_PRESCALER_VALUE;
+    writel(prescaler, chip->base + REG_TCFG0);
 	return 0;
 }
 

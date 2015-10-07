@@ -3,7 +3,7 @@
 #    otherwise please remove it.
 DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER                \
 	-DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE            \
-	-DDHDTHREAD -DDHD_DEBUG -DSHOW_EVENTS -DBCMDBG                        \
+	-DDHDTHREAD -DSHOW_EVENTS -DBCMDBG                        \
 	-DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT                                \
 	-DKEEP_ALIVE -DPKT_FILTER_SUPPORT                                     \
 	-DEMBEDDED_PLATFORM -DENABLE_INSMOD_NO_FW_LOAD -DPNO_SUPPORT          \
