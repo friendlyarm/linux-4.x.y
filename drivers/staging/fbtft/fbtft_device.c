@@ -1125,7 +1125,7 @@ static struct fbtft_device_display displays[] = {
 	}, {
 		.name = "matrix-spi_tft",
 		.spi = &(struct spi_board_info) {
-			.modalias = "fb_ili9341",
+			.modalias = "fb_st7789s",
 			.max_speed_hz = 32000000,
 			.bus_num                = 0,
 		    .chip_select            = 0,		// first spi dev
